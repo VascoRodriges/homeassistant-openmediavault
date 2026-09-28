@@ -17,7 +17,7 @@ jobs:
 
       - name: Build integration archive
         working-directory: custom_components/openmediavault
-        run: zip -r ../../../openmediavault.zip ./
+        run: zip -r ../../openmediavault.zip ./
 
       - name: Upload integration archive
         env:
