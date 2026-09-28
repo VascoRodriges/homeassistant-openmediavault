@@ -210,8 +210,8 @@ class OMVEntity:
         else:
             return DeviceInfo(
                 connections={(dev_connection, f"{dev_connection_value}")},
-                default_name=f"{self._inst} {dev_group}",
-                default_manufacturer="OpenMediaVault",
+                name=f"{self._inst} {dev_group}",
+                manufacturer="OpenMediaVault",
                 via_device=(DOMAIN, f"{self._ctrl.data['hwinfo']['hostname']}"),
             )
 
