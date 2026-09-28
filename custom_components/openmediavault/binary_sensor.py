@@ -1,8 +1,9 @@
 """OpenMediaVault binary sensor platform."""
+
 from logging import getLogger
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from .model import model_async_setup_entry, OMVEntity
-from .binary_sensor_types import SENSOR_TYPES, SENSOR_SERVICES
+from .binary_sensor_types import SENSOR_TYPES
 
 _LOGGER = getLogger(__name__)
 
@@ -19,7 +20,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         hass,
         config_entry,
         async_add_entities,
-        SENSOR_SERVICES,
         SENSOR_TYPES,
         dispatcher,
     )

@@ -10,7 +10,6 @@ from threading import Lock
 from time import time
 
 import requests
-from voluptuous import Optional
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 # ---------------------------
 #   load_cookies
 # ---------------------------
-def load_cookies(filename: str) -> Optional(dict):
+def load_cookies(filename: str) -> dict | None:
     """Load cookies from file."""
     if path.isfile(filename):
         with open(filename, "rb") as f:
@@ -195,7 +194,10 @@ class OpenMediaVaultAPI(object):
             error = True
             self.error_to_strings("%s" % api_error)
             self._connection = None
-        except (requests.exceptions.Timeout, requests.exceptions.RequestException) as api_error:
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.RequestException,
+        ) as api_error:
             error = True
             self.error_to_strings("%s" % api_error)
             self._connection = None
@@ -269,89 +271,108 @@ class OpenMediaVaultAPI(object):
         self,
         service: str,
         method: str,
-        params: dict[str, Any] | None = {},
-        options: dict[str, Any] | None = {"updatelastaccess": True},
-    ) -> Optional(list):
+        params: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> Any | None:
         """Retrieve data from OMV."""
-        if not self.connection_check():
+        params = {} if params is None else params
+        options = {"updatelastaccess": True} if options is None else options
+
+        for attempt in range(2):
+            if not self.connection_check():
+                return None
+
+            session_expired = False
+            with self.lock:
+                try:
+                    _LOGGER.debug(
+                        "OpenMediaVault %s query: %s, %s, %s, %s",
+                        self._host,
+                        service,
+                        method,
+                        params,
+                        options,
+                    )
+                    response = self._connection.post(
+                        self._resource,
+                        data=json.dumps(
+                            {
+                                "service": service,
+                                "method": method,
+                                "params": params,
+                                "options": options,
+                            }
+                        ),
+                        verify=self._ssl_verify,
+                    )
+                    if response.status_code != 200:
+                        self.error = response.status_code
+                        self._connected = False
+                        _LOGGER.warning(
+                            "OpenMediaVault %s unable to fetch data (%s)",
+                            self._host,
+                            response.status_code,
+                        )
+                        return None
+
+                    data = response.json()
+                    _LOGGER.debug(
+                        "OpenMediaVault %s query response: %s", self._host, data
+                    )
+                except (
+                    requests.exceptions.RequestException,
+                    json.decoder.JSONDecodeError,
+                ) as api_error:
+                    _LOGGER.warning(
+                        "OpenMediaVault %s unable to fetch data", self._host
+                    )
+                    self.disconnect("query", api_error)
+                    return None
+                except Exception as api_error:
+                    self.disconnect("query", api_error)
+                    return None
+
+                if not isinstance(data, dict):
+                    self.error = "invalid_response"
+                    _LOGGER.warning(
+                        "OpenMediaVault %s returned an invalid response", self._host
+                    )
+                    return None
+
+                api_error = data.get("error")
+                if api_error is None:
+                    self.error = None
+                    return data.get("response")
+
+                if not isinstance(api_error, dict):
+                    self.error = "invalid_response"
+                    _LOGGER.warning(
+                        "OpenMediaVault %s returned an invalid API error", self._host
+                    )
+                    return None
+
+                error_message = str(api_error.get("message", "Unknown API error"))
+                error_code = api_error.get("code", "api_error")
+                session_expired = error_code in (5001, 5002) or error_message in (
+                    "Session not authenticated.",
+                    "Session expired.",
+                )
+                if session_expired:
+                    _LOGGER.debug("OpenMediaVault %s session expired", self._host)
+                    self.error = 5001
+                else:
+                    self.error = error_code
+                    _LOGGER.warning(
+                        "OpenMediaVault %s API error in %s.%s: %s",
+                        self._host,
+                        service,
+                        method,
+                        error_message,
+                    )
+                    return None
+
+            if session_expired and attempt == 0 and self.connect():
+                continue
             return None
 
-        self.lock.acquire()
-        error = False
-        try:
-            _LOGGER.debug(
-                "OpenMediaVault %s query: %s, %s, %s, %s",
-                self._host,
-                service,
-                method,
-                params,
-                options,
-            )
-            response = self._connection.post(
-                self._resource,
-                data=json.dumps(
-                    {
-                        "service": service,
-                        "method": method,
-                        "params": params,
-                        "options": options,
-                    }
-                ),
-                verify=self._ssl_verify,
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                _LOGGER.debug("OpenMediaVault %s query response: %s", self._host, data)
-            else:
-                error = True
-
-        except (
-            requests.exceptions.ConnectionError,
-            json.decoder.JSONDecodeError,
-        ) as api_error:
-            _LOGGER.warning("OpenMediaVault %s unable to fetch data", self._host)
-            self.disconnect("query", api_error)
-            self.lock.release()
-            return None
-        except Exception:
-            self.disconnect("query")
-            self.lock.release()
-            return None
-
-        # Socket errors
-        if error:
-            try:
-                errorcode = response.status_code
-            except Exception:
-                errorcode = "no_respose"
-
-            _LOGGER.warning(
-                "OpenMediaVault %s unable to fetch data (%s)", self._host, errorcode
-            )
-
-            error_code = errorcode
-            self.error = error_code
-            self._connected = False
-            self.lock.release()
-            return None
-
-        # Api errors
-        if data is not None and data["error"] is not None:
-            error_message = data["error"]["message"]
-            error_code = data["error"]["code"]
-            if (
-                error_code == 5001
-                or error_code == 5002
-                or error_message == "Session not authenticated."
-                or error_message == "Session expired."
-            ):
-                _LOGGER.debug("OpenMediaVault %s session expired", self._host)
-                self.error = 5001
-                if self.connect():
-                    return self.query(service, method, params, options)
-
-        self.error = None
-        self.lock.release()
-
-        return data["response"]
+        return None

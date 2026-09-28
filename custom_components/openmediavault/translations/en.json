@@ -39,5 +39,43 @@
                 "description": "Configure integration"
             }
         }
+    },
+    "services": {
+        "system_reboot": {
+            "name": "Reboot OpenMediaVault",
+            "description": "Reboot the OpenMediaVault system targeted through its uptime sensor."
+        },
+        "system_shutdown": {
+            "name": "Shut down OpenMediaVault",
+            "description": "Shut down the OpenMediaVault system targeted through its uptime sensor."
+        },
+        "kvm_start": {
+            "name": "Start KVM virtual machine",
+            "description": "Start the targeted OpenMediaVault KVM virtual machine."
+        },
+        "kvm_stop": {
+            "name": "Stop KVM virtual machine",
+            "description": "Stop the targeted OpenMediaVault KVM virtual machine."
+        },
+        "kvm_restart": {
+            "name": "Restart KVM virtual machine",
+            "description": "Restart the targeted OpenMediaVault KVM virtual machine."
+        },
+        "kvm_snapshot": {
+            "name": "Create KVM snapshot",
+            "description": "Create a snapshot of the targeted OpenMediaVault KVM virtual machine."
+        },
+        "compose_start": {
+            "name": "Start Compose project",
+            "description": "Start the targeted OpenMediaVault Compose project."
+        },
+        "compose_stop": {
+            "name": "Stop Compose project",
+            "description": "Stop the targeted OpenMediaVault Compose project."
+        },
+        "compose_restart": {
+            "name": "Restart Compose project",
+            "description": "Restart the targeted OpenMediaVault Compose project."
+        }
     }
 }

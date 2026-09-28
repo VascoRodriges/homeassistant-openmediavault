@@ -1,7 +1,6 @@
 """OpenMediaVault Controller."""
 
 import asyncio
-import json
 import logging
 import time
 import pytz
@@ -27,6 +26,7 @@ from .const import (
     DEFAULT_SMART_DISABLE,
 )
 from .apiparser import parse_api
+from .compose import parse_compose_background_output
 from .omv_api import OpenMediaVaultAPI
 
 DEFAULT_TIME_ZONE = None
@@ -64,6 +64,7 @@ class OMVControllerData(object):
 
         self.listeners = []
         self.lock = asyncio.Lock()
+        self.hub_device_id = None
 
         self.api = OpenMediaVaultAPI(
             hass,
@@ -198,13 +199,13 @@ class OMVControllerData(object):
                 await self.hass.async_add_executor_job(self.get_service)
 
             plugins = self.data.get("plugin", {})
-            if self.api.connected() and plugins.get(
-                "openmediavault-kvm", {}
-            ).get("installed"):
+            if self.api.connected() and plugins.get("openmediavault-kvm", {}).get(
+                "installed"
+            ):
                 await self.hass.async_add_executor_job(self.get_kvm)
-            if self.api.connected() and plugins.get(
-                "openmediavault-compose", {}
-            ).get("installed"):
+            if self.api.connected() and plugins.get("openmediavault-compose", {}).get(
+                "installed"
+            ):
                 await self.hass.async_add_executor_job(self.get_compose)
 
             async_dispatcher_send(self.hass, self.signal_update)
@@ -606,38 +607,21 @@ class OMVControllerData(object):
     def _get_compose_file_list(self):
         """Return Compose file rows from the background-job API."""
         job = self.api.query("Compose", "getFileListBg", {"start": 0, "limit": -1})
-        if not isinstance(job, str) or not job.startswith("/tmp/"):
+        # The value is a remote OMV job identifier, never a local filesystem path.
+        if not isinstance(job, str) or not job.startswith("/tmp/"):  # nosec B108
             return None
 
         for _ in range(8):
             time.sleep(0.5)
-            output = self.api.query(
-                "Exec", "getOutput", {"filename": job, "pos": 0}
-            )
+            output = self.api.query("Exec", "getOutput", {"filename": job, "pos": 0})
             if not isinstance(output, dict) or output.get("running") is not False:
                 continue
 
             try:
-                response = json.loads(output.get("output", "{}"))
-            except (TypeError, json.JSONDecodeError):
+                return parse_compose_background_output(output.get("output", "{}"))
+            except (TypeError, ValueError):
                 _LOGGER.warning("Unable to parse OMV Compose background-job output")
                 return []
-
-            rows = []
-            for item in response.get("data", []):
-                status = str(item.get("status", "")).upper()
-                rows.append(
-                    {
-                        "name": item.get("name", "unknown"),
-                        "uuid": item.get("uuid", "unknown"),
-                        "state": "running" if "UP" in status else "exited",
-                        "image": item.get("image", "unknown"),
-                        "project": item.get("description", "unknown"),
-                        "service": item.get("svcname", "unknown"),
-                        "created": item.get("filedate", "unknown"),
-                    }
-                )
-            return rows
 
         _LOGGER.warning("Timed out waiting for OMV Compose background job")
         return None

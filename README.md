@@ -22,7 +22,8 @@ releases and to maintain additional functionality used by this installation.
 
 ## What this fork adds and fixes
 
-Release `v1.5.x` is based on the current upstream `master` branch and includes:
+Releases `v1.5.x` and `v1.6.x` are based on the current upstream `master` branch
+and include:
 
 * authentication compatibility with the response schema introduced in OMV 8.5;
 * support for the current OMV Compose background-job API;
@@ -31,6 +32,10 @@ Release `v1.5.x` is based on the current upstream `master` branch and includes:
 * removal of the unsafe generic RPC action that could invoke arbitrary OMV API methods;
 * correct reconciliation of refreshed Compose data while existing HA entities remain loaded;
 * guaranteed release of controller update locks after an exception;
+* safe reauthentication after an expired OMV session without deadlocking polling;
+* current Home Assistant entity-action registration and device-registry links;
+* tested Compose response normalization and actionable command errors;
+* automated Python, security, HACS, and Home Assistant metadata checks;
 * safer config-entry unloading and explicit fork documentation/issue links.
 
 The original monitoring features remain available:
@@ -49,10 +54,7 @@ Planned work is tracked here so the repository description does not need to be
 rewritten for every small release:
 
 * migrate polling to Home Assistant's `DataUpdateCoordinator` model;
-* register entity actions from integration setup using the current HA service API;
-* replace deprecated `DeviceInfo` fields before their Home Assistant removal date;
-* add automated unit tests for API parsing, Compose commands, and error recovery;
-* enable current HACS and Home Assistant validation in CI;
+* continue expanding automated tests for API errors and recovery paths;
 * improve removal/unavailability handling for disks, filesystems, VMs, and Compose projects;
 * expand OMV 7/8 compatibility testing, translations, diagnostics, and repair messages;
 * keep the fork rebased on relevant upstream fixes where they remain compatible.

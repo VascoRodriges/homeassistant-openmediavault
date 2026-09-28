@@ -1,8 +1,8 @@
 """OMV HA shared entity model"""
+
 from logging import getLogger
 from typing import Any
 from collections.abc import Mapping
-from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -23,17 +23,12 @@ async def model_async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-    sensor_services,
     sensor_types,
     dispatcher,
 ) -> None:
     inst = config_entry.data[CONF_NAME]
     omv_controller = hass.data[DOMAIN][config_entry.entry_id]
     sensors = {}
-
-    platform = entity_platform.async_get_current_platform()
-    for tmp in sensor_services:
-        platform.async_register_entity_service(tmp[0], tmp[1], tmp[2])
 
     @callback
     def update_controller():
@@ -129,7 +124,7 @@ class OMVEntity:
     def __init__(
         self,
         inst,
-        uid: "",
+        uid: str,
         omv_controller,
         entity_description,
     ):
@@ -169,9 +164,10 @@ class OMVEntity:
     def available(self) -> bool:
         """Return if controller is available"""
         if self._uid:
-            return self._ctrl.connected() and self._uid in self._ctrl.data[
-                self.entity_description.data_path
-            ]
+            return (
+                self._ctrl.connected()
+                and self._uid in self._ctrl.data[self.entity_description.data_path]
+            )
         return self._ctrl.connected()
 
     @property
@@ -212,7 +208,7 @@ class OMVEntity:
                 connections={(dev_connection, f"{dev_connection_value}")},
                 name=f"{self._inst} {dev_group}",
                 manufacturer="OpenMediaVault",
-                via_device=(DOMAIN, f"{self._ctrl.data['hwinfo']['hostname']}"),
+                via_device_id=self._ctrl.hub_device_id,
             )
 
     @property
