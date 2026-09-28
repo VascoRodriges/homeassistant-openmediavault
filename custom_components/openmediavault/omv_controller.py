@@ -1,6 +1,9 @@
 """OpenMediaVault Controller."""
 
 import asyncio
+import json
+import logging
+import time
 import pytz
 from datetime import datetime, timedelta
 
@@ -27,6 +30,7 @@ from .apiparser import parse_api
 from .omv_api import OpenMediaVaultAPI
 
 DEFAULT_TIME_ZONE = None
+_LOGGER = logging.getLogger(__name__)
 
 
 def utc_from_timestamp(timestamp: float) -> datetime:
@@ -144,16 +148,18 @@ class OMVControllerData(object):
         """Update OpenMediaVault hardware info."""
         try:
             await asyncio.wait_for(self.lock.acquire(), timeout=30)
-        except Exception:
+        except TimeoutError:
+            _LOGGER.warning("Timed out waiting for the OMV hardware update lock")
             return
 
-        await self.hass.async_add_executor_job(self.get_hwinfo)
-        if self.api.connected():
-            await self.hass.async_add_executor_job(self.get_plugin)
-        if self.api.connected():
-            await self.hass.async_add_executor_job(self.get_disk)
-
-        self.lock.release()
+        try:
+            await self.hass.async_add_executor_job(self.get_hwinfo)
+            if self.api.connected():
+                await self.hass.async_add_executor_job(self.get_plugin)
+            if self.api.connected():
+                await self.hass.async_add_executor_job(self.get_disk)
+        finally:
+            self.lock.release()
 
     # ---------------------------
     #   force_update
@@ -173,37 +179,37 @@ class OMVControllerData(object):
 
         try:
             await asyncio.wait_for(self.lock.acquire(), timeout=10)
-        except Exception:
+        except TimeoutError:
+            _LOGGER.warning("Timed out waiting for the OMV update lock")
             return
 
-        await self.hass.async_add_executor_job(self.get_hwinfo)
-        if self.api.connected():
-            await self.hass.async_add_executor_job(self.get_fs)
+        try:
+            await self.hass.async_add_executor_job(self.get_hwinfo)
+            if self.api.connected():
+                await self.hass.async_add_executor_job(self.get_fs)
 
-        if not self.option_smart_disable and self.api.connected():
-            await self.hass.async_add_executor_job(self.get_smart)
+            if not self.option_smart_disable and self.api.connected():
+                await self.hass.async_add_executor_job(self.get_smart)
 
-        if self.api.connected():
-            await self.hass.async_add_executor_job(self.get_network)
+            if self.api.connected():
+                await self.hass.async_add_executor_job(self.get_network)
 
-        if self.api.connected():
-            await self.hass.async_add_executor_job(self.get_service)
+            if self.api.connected():
+                await self.hass.async_add_executor_job(self.get_service)
 
-        if (
-            self.api.connected()
-            and "openmediavault-kvm" in self.data["plugin"]
-            and self.data["plugin"]["openmediavault-kvm"]["installed"]
-        ):
-            await self.hass.async_add_executor_job(self.get_kvm)
-        if (
-            self.api.connected()
-            and "openmediavault-compose" in self.data["plugin"]
-            and self.data["plugin"]["openmediavault-compose"]["installed"]
-        ):
-            await self.hass.async_add_executor_job(self.get_compose)
+            plugins = self.data.get("plugin", {})
+            if self.api.connected() and plugins.get(
+                "openmediavault-kvm", {}
+            ).get("installed"):
+                await self.hass.async_add_executor_job(self.get_kvm)
+            if self.api.connected() and plugins.get(
+                "openmediavault-compose", {}
+            ).get("installed"):
+                await self.hass.async_add_executor_job(self.get_compose)
 
-        async_dispatcher_send(self.hass, self.signal_update)
-        self.lock.release()
+            async_dispatcher_send(self.hass, self.signal_update)
+        finally:
+            self.lock.release()
 
     # ---------------------------
     #   get_hwinfo
@@ -561,17 +567,23 @@ class OMVControllerData(object):
     #   get_compose
     # ---------------------------
     def get_compose(self):
-        """Get OMV compose"""
-        tmp = self.api.query("compose", "getContainerList", {"start": 0, "limit": 999})
-        if "data" not in tmp:
-            return
+        """Get Compose projects from current or legacy OMV Compose APIs."""
+        source = self._get_compose_file_list()
+        if source is None:
+            legacy = self.api.query(
+                "compose", "getContainerList", {"start": 0, "limit": 999}
+            )
+            if not isinstance(legacy, dict) or "data" not in legacy:
+                return
+            source = legacy["data"]
 
-        self.data["compose"] = parse_api(
+        parsed = parse_api(
             data={},
-            source=tmp["data"],
+            source=source,
             key="name",
             vals=[
                 {"name": "name"},
+                {"name": "uuid", "default": "unknown"},
                 {"name": "image", "default": "unknown"},
                 {"name": "project", "default": "unknown"},
                 {"name": "service", "default": "unknown"},
@@ -579,3 +591,53 @@ class OMVControllerData(object):
                 {"name": "state", "default": "unknown"},
             ],
         )
+
+        current = self.data["compose"]
+        for uid, item in parsed.items():
+            if uid in current:
+                current[uid].clear()
+                current[uid].update(item)
+            else:
+                current[uid] = item
+
+        for uid in current.keys() - parsed.keys():
+            current[uid]["state"] = "unknown"
+
+    def _get_compose_file_list(self):
+        """Return Compose file rows from the background-job API."""
+        job = self.api.query("Compose", "getFileListBg", {"start": 0, "limit": -1})
+        if not isinstance(job, str) or not job.startswith("/tmp/"):
+            return None
+
+        for _ in range(8):
+            time.sleep(0.5)
+            output = self.api.query(
+                "Exec", "getOutput", {"filename": job, "pos": 0}
+            )
+            if not isinstance(output, dict) or output.get("running") is not False:
+                continue
+
+            try:
+                response = json.loads(output.get("output", "{}"))
+            except (TypeError, json.JSONDecodeError):
+                _LOGGER.warning("Unable to parse OMV Compose background-job output")
+                return []
+
+            rows = []
+            for item in response.get("data", []):
+                status = str(item.get("status", "")).upper()
+                rows.append(
+                    {
+                        "name": item.get("name", "unknown"),
+                        "uuid": item.get("uuid", "unknown"),
+                        "state": "running" if "UP" in status else "exited",
+                        "image": item.get("image", "unknown"),
+                        "project": item.get("description", "unknown"),
+                        "service": item.get("svcname", "unknown"),
+                        "created": item.get("filedate", "unknown"),
+                    }
+                )
+            return rows
+
+        _LOGGER.warning("Timed out waiting for OMV Compose background job")
+        return None

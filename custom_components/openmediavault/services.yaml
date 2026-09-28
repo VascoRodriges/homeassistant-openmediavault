@@ -46,3 +46,27 @@ kvm_snapshot:
     entity:
       integration: openmediavault
       domain: sensor
+
+compose_start:
+  name: Start Compose project
+  description: Start the targeted OpenMediaVault Compose project
+  target:
+    entity:
+      integration: openmediavault
+      domain: sensor
+
+compose_stop:
+  name: Stop Compose project
+  description: Stop the targeted OpenMediaVault Compose project
+  target:
+    entity:
+      integration: openmediavault
+      domain: sensor
+
+compose_restart:
+  name: Restart Compose project
+  description: Restart the targeted OpenMediaVault Compose project
+  target:
+    entity:
+      integration: openmediavault
+      domain: sensor

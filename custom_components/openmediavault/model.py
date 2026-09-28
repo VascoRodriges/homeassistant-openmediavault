@@ -168,6 +168,10 @@ class OMVEntity:
     @property
     def available(self) -> bool:
         """Return if controller is available"""
+        if self._uid:
+            return self._ctrl.connected() and self._uid in self._ctrl.data[
+                self.entity_description.data_path
+            ]
         return self._ctrl.connected()
 
     @property

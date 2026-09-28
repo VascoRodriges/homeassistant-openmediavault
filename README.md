@@ -1,4 +1,8 @@
 # OpenMediaVault integration for Home Assistant
+
+This public fork is based on
+[`tomaae/homeassistant-openmediavault`](https://github.com/tomaae/homeassistant-openmediavault)
+and keeps compatibility fixes together with additional OMV Compose support.
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/tomaae/homeassistant-openmediavault?style=plastic)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=plastic)](https://github.com/hacs/integration)
 ![Project Stage](https://img.shields.io/badge/project%20stage-development-yellow.svg?style=plastic)
@@ -22,6 +26,7 @@ Features:
 * System status sensors (Available updates, Required reboot and Dirty config)
 * Disk and smart sensors
 * Service sensors
+* OMV Compose project status and entity-targeted start, stop, and restart actions
 
 # Features
 ## Filesystem usage

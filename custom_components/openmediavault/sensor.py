@@ -1,4 +1,5 @@
 """OpenMediaVault sensor platform."""
+import asyncio
 from logging import getLogger
 from typing import Any
 from collections.abc import Mapping
@@ -27,6 +28,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         "OMVDiskSensor": OMVDiskSensor,
         "OMVUptimeSensor": OMVUptimeSensor,
         "OMVKVMSensor": OMVKVMSensor,
+        "OMVComposeSensor": OMVComposeSensor,
     }
     await model_async_setup_entry(
         hass,
@@ -220,3 +222,34 @@ class OMVKVMSensor(OMVSensor):
                 "vmname": f"{self._data['vmname']}",
             },
         )
+
+
+class OMVComposeSensor(OMVSensor):
+    """Represent and control an OMV Compose project."""
+
+    async def _command(self, command: str) -> None:
+        uuid = self._data.get("uuid")
+        if not uuid or uuid == "unknown":
+            raise ValueError("OMV Compose project UUID is unavailable")
+
+        await self.hass.async_add_executor_job(
+            self._ctrl.api.query,
+            "Compose",
+            "doCommand",
+            {"command": command, "uuid": uuid},
+        )
+        await asyncio.sleep(3)
+        await self.hass.async_add_executor_job(self._ctrl.get_compose)
+        self.async_write_ha_state()
+
+    async def start(self) -> None:
+        """Start this Compose project."""
+        await self._command("up")
+
+    async def stop(self) -> None:
+        """Stop this Compose project."""
+        await self._command("down")
+
+    async def restart(self) -> None:
+        """Restart this Compose project."""
+        await self._command("restart")

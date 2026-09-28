@@ -61,4 +61,4 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         await controller.async_reset()
         hass.data[DOMAIN].pop(config_entry.entry_id)
 
-    return True
+    return unload_ok
